@@ -1,4 +1,4 @@
-from timeSeriesAnalysis.dateparser import dateparser, date_parser_sismo 
+from timeseries_analysis.dateparser import dateparser, date_parser_sismo 
 
 import numpy as np
 import datetime
@@ -24,8 +24,8 @@ tfcontnamesold = ('y', 'm', 'd', 'H', 'M', 'S', 'CSC', 'CSN', 'CSS',
 
 
 # Permanent multigas data
-mgperm_names = list(TFContNames)[:6] + ['SO2', 'H2S', 'CO2', 'Hygrometry', # 
-                                        'T', 'p', 'Battery', 'H2O']
+mgperm_names = list(tf_cont_names)[:6] + ['SO2', 'H2S', 'CO2', 'Hygrometry', # 
+                                          'T', 'p', 'Battery', 'H2O']
 
 # Seismological data
 seismo_ts_names = ('datetime', 'Nb', 'Duration', 'Amplitude', 'Magnitude', 
@@ -89,7 +89,7 @@ def read_timeseries(fname, names, sep=' ', comment='#', **kwargs):
                            date_parser=dateparser, **kwargs)
 
 
-def readSeismoTS(fname, names, sep=';'):
+def read_seismo_ts(fname, names, sep=';'):
     '''
     Returns a dataframe containing seismological time series data.  Uses a 
     particular form of the date parsing routines to account for the fractional 
@@ -97,55 +97,6 @@ def readSeismoTS(fname, names, sep=';'):
     '''
     return pandas.read_csv(fname, sep=sep, comment='#', names=names,
                            parse_dates=[0], date_parser=date_parser_sismo) 
-
-
-def resample_df(df, freq='1H', method='mean',
-                datetimecol='datetime', dropna_subset=None):
-    '''
-    Returns a dataframe whose data has been resampled at the requested 
-    freqency and averaged.  
-
-    Parameters
-    ----------
-    df : pandas.DataFrame()
-        Dataframe to be resampled
-    freq : str
-        Sampling frequency, e.g. '1H', '1D'
-    method : str
-        Method for resampling, one of 'mean', 'median' or 'std'
-    datetimecol : str
-        Name of the column containing datetime information.  Default is 
-        'datetime'.
-    dropna_subset : array_like
-        Column names within which NaN values should be discarded.  Default
-        is None, i.e. all columns.
-
-
-    Notes
-    -----
-    The index of the dataframe is required to be a "datetime".  If this is 
-    not the case, one will be created.
-    '''
-    # check if index is already in datetime format AND/OR that datetime exists
-    if datetimecol not in df.columns:
-        raise KeyError('"datetime" not in dataframe')
-    df.index = df[datetimecol]
-
-    if method == 'mean':
-        new_df = df.resample(freq).mean()
-    elif method == 'median':
-        new_df = df.resample(freq).median()
-    elif method == 'std':
-        new_df = df.resample(freq).std()
-    else:
-        raise TypeError('unknown method: %s' % method)
-
-    if dropna_subset is not None:
-        new_df.dropna(subset=dropna_subset, inplace=True)
-    new_df[datetimecol] = new_df.index
-    new_df.reset_index(inplace=True, drop=True)
-
-    return new_df
 
 
 def write_to_workbook(df, iterkey, iterable, wb_name='workbook.xlsx'):

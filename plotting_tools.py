@@ -1,7 +1,7 @@
 import datetime
 
 
-def plotQuakes(datetimes, magnitudes, axis, M0=2., width=1., alpha=.5,
+def plot_quakes(datetimes, magnitudes, axis, M0=2., width=1., alpha=.5,
                **kwargs):
     '''
     Plot earthquakes as vertical lines on background, where width is an
@@ -29,7 +29,7 @@ def plotQuakes(datetimes, magnitudes, axis, M0=2., width=1., alpha=.5,
     return
 
 
-def plotMaria(ax, alpha=.5, linewidth=1):
+def plot_maria(ax, alpha=.5, linewidth=1):
     '''
     Put a red vertical stripe when Maria occurred
     '''

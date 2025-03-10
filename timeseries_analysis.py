@@ -27,6 +27,7 @@ import matplotlib.patches as patches
 
 # Numerical/analysis
 from scipy import interpolate
+from scipy import ndimage
 from scipy.signal import (butter,
                           lfilter,
                           freqz, 
@@ -38,11 +39,11 @@ from scipy.signal import (butter,
                           medfilt,
                           periodogram,
                           find_peaks,
-                          detrend,
-                          )
+                          detrend)
 from scipy.signal.windows import hann, tukey
 from scipy.optimize import curve_fit
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2sam
+
 from astropy.timeseries import LombScargle
 
 import pandas as pd
@@ -197,8 +198,10 @@ def spectral_density(df, colname, fs=None, index=None, method='LS',
     '''
     '''
 
-    if ((index == 'Date') or ('Date' in df.columns)):
+    if ((index == 'Date') or ('Date' in df.columns)): 
         d = df['Date']
+    elif (df.index.name == 'Date'):
+        d = df.index
     else:  #if index == 'index':
         d = df.index
         
@@ -428,11 +431,12 @@ def detrend_normalise_data(data, window=None):
     ret : ndarray
         Detrended and normalised data, with or without windowing
     """
-    d = signal.detrend(data)
+    d = detrend(data)
     if window is not None:
         d *= window(len(d))
     return d / np.linalg.norm(d)
-    
+
+
 def detrend_df(df, series, detrend_series='True', window=None):
     d = df.index
     x = d.astype(int).values // 1e9
@@ -483,8 +487,9 @@ def smoothing_timeseries(d, y, interp_kernel='28D', smoothing_kernel=2):
     else:
         ds = interp_kernel
     xs = ds.astype(int).values // 1e9
-    yi = np.interp(xs, x, y)               # Linear interpolation to 28-day period
-    ys = ndimage.gaussian_filter1d(yi, smoothing_kernel)  # gaussian smoothing using 2-day kernel
+    yi = np.interp(xs, x, y)  # Linear interpolation to given period
+    # gaussian smoothing using 2-day kernel
+    ys = ndimage.gaussian_filter1d(yi, smoothing_kernel)  
 
     return ds, xs, ys
 
