@@ -1,0 +1,417 @@
+#!/usr/share/python3 
+# coding=utf-8
+
+""" 
+timeSeriesAnalysis.py
+
+Provides routines for the analysis of time series, including plotting and 
+filtering.
+
+Last update: 2023-05-09
+
+Created by D. E. Jessop
+"""
+
+# Plotting
+from matplotlib.dates import (DateFormatter, 
+                              MonthLocator, 
+                              DayLocator)
+from matplotlib.ticker import (LogLocator,
+                               NullFormatter, 
+                               AutoMinorLocator,
+                               MultipleLocator,
+                               ScalarFormatter)
+from matplotlib.transforms import blended_transform_factory
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# Numerical/analysis
+from scipy import interpolate
+from scipy.signal import (butter,
+                          lfilter,
+                          freqz, 
+                          firwin,
+                          fftconvolve,
+                          filtfilt,
+                          welch,
+                          periodogram,
+                          medfilt,
+                          periodogram,
+                          find_peaks,
+                          detrend,
+                          )
+from scipy.signal.windows import hann, tukey
+from scipy.optimize import curve_fit
+from scipy.stats import ks_2samp
+from astropy.timeseries import LombScargle
+
+import pandas as pd
+import numpy as np
+
+# String manipulation
+from datetime import datetime as DT
+from string import ascii_lowercase as LC
+
+
+secs_in_day = 86400.0020
+secs_in_hr  =  3600.
+days_in_yr  =   365.2422
+days_in_mon =    28.
+
+def hz_to_yr(f_hz):
+    '''
+    Transform the frequency (in Hz) to a period (in yrs)
+    '''
+    return 1 / (f_hz * days_in_yr * secs_in_day)
+
+
+def plot_peaks_periods(ax, peaks, power_spectrum, periods=None, unit='years', 
+                       fs=None, yp=0.002, zorder=8, peakoffset=.8, **kwargs):
+    '''
+    Parameters
+    ----------
+    ax : matplotlib axis
+    peaks : array-like
+    power_spectrum : list or tuple
+        Power-spectrum and frequencies 
+    periods : list or array-like
+    fs : scalar
+    yp : scalar
+        proportion of yaxis to place the annotations
+    zorder : int
+        order of plotting (default is 8 - high), so red dots get plotted
+        over the top of other curves and annotations
+    '''
+    tform  = blended_transform_factory(ax.transData, ax.transAxes)
+    f, Pxx = power_spectrum
+
+    # Plot peak frequencies and annotate these points with the cooresponding
+    # period in years.
+    for peak in peaks:
+        if peak is not None:
+            T_years = hz_to_yr(f[peak])
+            p = ax.annotate('%.2f %s' % (T_years, 'yr'),
+                            xy=(f[peak], Pxx[peak]),
+                            # Place text slightly below data point
+                            xytext=(f[peak], Pxx[peak]*peakoffset),
+                            xycoords='data',
+                            **kwargs)
+            _ = ax.plot(f[peak], Pxx[peak], '.r', zorder=zorder)
+
+    if 'hour' in unit:
+        days_in_period = 1. / 24.
+    if 'day' in unit:
+        days_in_period = 1.
+    if 'week' in unit:
+        days_in_period = 7.
+    if 'month' in unit:
+        days_in_period = days_in_mon
+    if 'year' in unit:
+        days_in_period = days_in_yr
+
+    # Add vertical (grey) lines to indicate certain periods in the
+    # frequency space, i.e. 1 week, 1 month, 1 year etc.
+    if periods is not None:
+        for period in periods:
+            freq = 1 / (period * days_in_period * secs_in_day)
+            ax.axvline(freq, color='gray', lw=.5, zorder=0)
+            
+            if (period == 1) and (unit.endswith('s')):
+                unit = unit[:-1]  # e.g. 'year', not 'years'
+            elif (period != 1) and not unit.endswith('s'):
+                unit += 's'
+            text_str = '%d %s' % (period, unit)
+            ax.annotate(text_str, xy=(freq, yp),
+                        transform=tform,
+                        color='gray', rotation=90, 
+                        ha='center', fontsize=10, zorder=6,
+                        bbox=dict(fc='w', ec='none', pad=.1))
+
+    # Add annotations to these vertical bars
+    if fs is not None:
+        ax.axvline(fs, color='gray', lw=.5, zorder=0)
+        period = round(fs * (secs_in_day * 28))
+        # print(str(period) + 'months')
+        text_str = '%d %s' % (period, unit)
+        ax.annotate(text_str, xy=(fs, yp),
+                    transform=tform,
+                    color='gray', rotation=90, 
+                    ha='center', fontsize=10, zorder=6,
+                    bbox=dict(fc='w', ec='none', pad=.1))
+
+    return
+        
+
+# Fit a sinusoid to the gas data
+def sinusoid(x, y0=0., A=1., omega=1., phi=0.):
+    '''Returns a model of an offset, phased sinusoid.
+    
+    Parameters
+    ----------
+    x : list or array-like
+      independent variable
+    y0 : scalar
+      offset of the model, roughly the mean of the data to be modelled
+    A : scalar
+      amplitude of the model
+    omega : scalar
+      frequency of the model
+    phi : scalar
+      phase of the model
+    
+    Returns:
+    --------
+    y : list or array-like
+      predicted values
+    '''
+    return y0 + A * np.sin(omega * x + phi)
+
+
+def mpole_sinusoid(x, y0=0., A=1., f=2*np.pi, phi=0.):
+    ''' 
+    Returns a multipole sinusoid model.  Note that A, omega and phi
+    MUST be of the same length.
+    
+    Parameters
+    ----------
+    x : list or array-like
+      data
+    y0 : scalar
+        signal midpoint
+    A : list or array-like
+        amplitudes of each component 
+    omega : list or array-like
+        driving frequencies
+    phi : list or array-like
+        phase andgle of each component
+    '''
+    mpole_model = y0
+    for A_, f_, phi_ in zip(A, f, phi):
+        mpole_model += A_ * np.sin(2 * np.pi * f_ * x + phi_)
+
+    return mpole_model
+
+
+def spectral_density(df, colname, fs=None, index=None, method='LS',
+                     window='hann'):
+    '''
+    '''
+
+    if ((index == 'Date') or ('Date' in df.columns)):
+        d = df['Date']
+    else:  #if index == 'index':
+        d = df.index
+        
+    x = d.astype(int).values // 1e9
+    y = df[colname]
+
+    x = x[~y.isna()]
+    d = d[~y.isna()]
+    y = y[~y.isna()]
+    if window == 'tukey':
+        y = detrend(y) * tukey(len(y))
+    else:
+        y = detrend(y) * hann(len(y))
+    
+    
+
+    ## RESAMPLE (INTERPOLATE) DATA TO 28-DAY PERIOD 
+    ds = pd.date_range(d.min(), end=d.max(), freq='1D')
+    xs = ds.astype(int).values // 1e9
+    # Linear interpolation onto a strictly 28-day grid
+    ys = np.interp(xs, x, y)    
+
+    if fs == None:
+        method = 'LS'
+        print('No sampling frequency given.  ' +
+              'Computing Lomb-Scargle periodogram')
+
+    if method == 'LS':
+        if fs is not None:
+            f, Pxx = LombScargle(x, y).autopower(maximum_frequency=.5*fs,
+                                                 samples_per_peak=11)
+        else:
+            f, Pxx = LombScargle(x, y).autopower(samples_per_peak=11)
+    elif method == 'PD':
+        f, Pxx = periodogram(ys,
+                             fs=fs,
+                             window=window,
+                             scaling='spectrum',
+                             detrend='linear')
+    else:
+        print('Unknown method.  Aborting...')
+        return
+    return f, Pxx
+
+
+def n_highest_peaks(peaks, Pxx, npeaks=5):
+    '''
+    Return the npeak highest peaks from spectrum data.  Spectrum 
+    is sorted in highest-lowest order.
+
+    Parameters
+    ----------
+    peaks : array_like
+    Pxx : array_like
+        The PSD defining the peaks
+    npeaks : int
+        Number of peaks to analyse    
+    '''
+    ordered_peaks = []
+    for P in sorted(Pxx[peaks], reverse=True)[:npeaks]:
+        ordered_peaks.append(np.where(Pxx == P)[0][0])
+    return ordered_peaks
+
+
+def fir_filter(data, order, cutoff):
+    coeffs = firwin(order, cutoff, window='hann')
+    y = fftconvolve(data, coeffs, mode='same')
+    return y
+
+
+def butter_lowpass(cutoff, fs, order=5):
+    '''
+    Returns the coefficients of a Butterworth filter with cutoff and order as
+    specified in the arguements.
+    '''
+    nyq  = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
+
+def butter_lowpass_filter(data, cutoff, fs, order=5):
+    ''' 
+    Applies a uni-directional Butterworth filter to data.  Lag and edge effects
+    can be apparent using this method
+    
+    Parameters
+    ----------
+    data : array_like
+        Values of the sampled data
+    cutoff : float
+        Cutoff frequency for the filter
+    fs : float
+        Sampling frequency (i.e. twice the Nyquist frequency)
+    order : int (optional)
+        Order of the butterworth filter (default is 5).  
+
+    Returns
+    -------
+    y : array_like
+        Filtered data
+
+    See Also
+    --------
+    butter_lowpass, filtfilt
+    '''
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+
+def butter_lowpass_filtfilt(data, cutoff, fs, order=5):
+    ''' 
+    Applies a cascading (forward and backward) Butterworth filter to data.
+    Lag and edge effects are eliminated using this method, though it is a 
+    little slower (twice as slow?) than a unidirectional filter
+    
+    Parameters
+    ----------
+    data : array_like
+        Values of the sampled data
+    cutoff : float
+        Cutoff frequency for the filter
+    fs : float
+        Sampling frequency (i.e. twice the Nyquist frequency)
+    order : int (optional)
+        Order of the butterworth filter (default is 5).  
+
+    Returns
+    -------
+    y : array_like
+        Filtered data
+
+    See Also
+    --------
+    butter_lowpass, filtfilt
+    '''
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = filtfilt(b, a, data)
+    return y
+
+
+def ts2psd(data, t0=1, method='periodogram'):
+    '''
+    Calculates the power-spectral density (periodogram) for a given timeseries
+
+    Parameters
+    ----------
+    data : array_like
+        Values of the sampled data
+    t0 : float, optional
+        Periodicity of the data sampling, i.e. the time interval between 
+        successive data points.  Default is 1 s.
+    method : string, optional
+        'periodogram' or 'welch', the former is the default
+
+    Returns:
+    --------
+    f : array_like
+        frequencies at which PSD is calculated
+    PSD : array_like
+        power-spectral density of the data set
+
+    See also:
+    ---------
+    scipy.signal.periodogram
+    scipy.signal.welch
+    '''
+    fs  =  1./t0  # Sampling frequency
+    Nyq = .5 * fs  # Nyquist sampling rate.  Could be useful later
+
+    # Estimate PSD
+    if method == 'welch':
+        return welch(data, fs, window='hann')
+    else:       # Default setting
+        return periodogram(data, fs, window='hann')
+
+
+def moving_average(data, radius, pad_mode='mean'):
+    """ Adapted from 
+    https://learnopencv.com/video-stabilization-using-point-feature-matching-
+    in-opencv/
+
+    Created by D. E. Jessop, 2023-04-28
+    """
+    window_size = 2 * radius + 1
+    # Define the filter
+    f = np.ones(window_size) / window_size
+    # Add padding to the boundaries
+    data_pad = np.pad(data, (radius, radius), pad_mode)
+    # Return convolved data with padding removed
+    return np.convolve(data_pad, f, mode='valid')
+
+
+def plot_data_plotly(df, **kwargs):
+    fig = px.scatter(df, **kwargs)
+    # Put y-axis values on logarithmic scale
+    fig.update_layout(yaxis_type='linear')
+    fig.update_layout(
+        xaxis_tickformat = '%Y-%m-%d',
+        xaxis_title = 'Date',
+        font=dict(
+            family='Computer Modern Roman',
+            size=18,
+            color='#000000',
+        ),
+        legend=dict(x=.05, y=.95, title='<b>Site</b>'),
+    )
+
+    return fig
+
+
+
+
+
+    
