@@ -542,3 +542,56 @@ def resample_df(df, freq='1H', method='mean',
 
     return new_df
 
+
+def correlation_matrix_plot(df, column_names, figsize=(10, 10),
+                            corr_type='full'):
+    '''Returns a plot of the auto- and cross-correlations for the n DataSeries
+    in the DataFrame df in the form of a n-by-n matrix, plus n-by-n matrices
+    containing the maximum lags and correlations
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+    column_names : list of str
+    figsize : tuple
+    corr_type : str
+        Size of the output ('full' - full discrete linear cross-correlation of
+        the inputs, default; 'valid' - the output consists only of those
+        elements that do not rely on the zero-padding.  In 'valid' mode, either
+        in1 or in2 must be at least as large as the other in every dimension;
+        'same' - output is the same size as in1, centered with respect to the
+        'full' output.)
+
+    Returns
+    -------
+    fig : matplotlib.figure
+    ax : matplotlib.axis
+    mlags : numpy.array
+    mcorr : numpy.array
+    '''
+
+    ndata = len(column_names)
+    fig, ax = plt.suboplots(nrows=ndata, ncols=ndata, sharex=True, sharey=True,
+                            figsize=figsize)
+
+    mlags = np.zeros((ndata, ndata), dtype=float)
+    mcorr = np.zeros((ndata, ndata), dtype=float)
+    for indy in range(ndata):
+        series_a = detrend_normalise_data(df[column_names[indy]].interpolate())
+        for indx in range(indy, ndata):  # Only "upper" triangle of matrix
+            series_b = detrend_normalise_data(
+                df[column_names[indx]].interpolate())
+            corr = scipy.signal.correlate(series_a, series_b, corr_type)
+            lags = scipy.signal.correlate(len(series_a), len(series_b),
+                                          corr_type)
+            ax[indy, indx].plot(lags, corr, '-k')
+            ax[indy, indx].grid()
+
+            max_lag = np.argmax(abs(corr))
+
+            ax[indy, indx].plot(lags[max_lag], corr[max_lag], '.r')
+
+            mlags[indy, indx] = lags[max_lag]
+            mcorr[indy, indx] = corr[max_lag]
+
+    return fig, ax, mlags, mcorr
