@@ -42,7 +42,7 @@ from scipy.signal import (butter,
                           detrend)
 from scipy.signal.windows import hann, tukey
 from scipy.optimize import curve_fit
-from scipy.stats import ks_2sam
+# from scipy.stats import ks_2sam
 
 from astropy.timeseries import LombScargle
 
