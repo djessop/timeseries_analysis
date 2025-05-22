@@ -39,6 +39,8 @@ from scipy.signal import (butter,
                           medfilt,
                           periodogram,
                           find_peaks,
+                          correlate,
+                          correlation_lags,
                           detrend)
 from scipy.signal.windows import hann, tukey
 from scipy.optimize import curve_fit
@@ -543,7 +545,7 @@ def resample_df(df, freq='1H', method='mean',
     return new_df
 
 
-def correlation_matrix_plot(df, column_names, figsize=(10, 10),
+def correlation_matrix_plot(df, column_names, title, xlabel, figsize=(10, 10),
                             corr_type='full'):
     '''Returns a plot of the auto- and cross-correlations for the n DataSeries
     in the DataFrame df in the form of a n-by-n matrix, plus n-by-n matrices
@@ -553,6 +555,8 @@ def correlation_matrix_plot(df, column_names, figsize=(10, 10),
     ----------
     df : pandas.DataFrame
     column_names : list of str
+    title : str
+    xlabel : str
     figsize : tuple
     corr_type : str
         Size of the output ('full' - full discrete linear cross-correlation of
@@ -571,8 +575,8 @@ def correlation_matrix_plot(df, column_names, figsize=(10, 10),
     '''
 
     ndata = len(column_names)
-    fig, ax = plt.suboplots(nrows=ndata, ncols=ndata, sharex=True, sharey=True,
-                            figsize=figsize)
+    fig, ax = plt.subplots(nrows=ndata, ncols=ndata, sharex=True, sharey=True,
+                           figsize=figsize)
 
     mlags = np.zeros((ndata, ndata), dtype=float)
     mcorr = np.zeros((ndata, ndata), dtype=float)
@@ -581,9 +585,9 @@ def correlation_matrix_plot(df, column_names, figsize=(10, 10),
         for indx in range(indy, ndata):  # Only "upper" triangle of matrix
             series_b = detrend_normalise_data(
                 df[column_names[indx]].interpolate())
-            corr = scipy.signal.correlate(series_a, series_b, corr_type)
-            lags = scipy.signal.correlate(len(series_a), len(series_b),
-                                          corr_type)
+            corr = correlate(series_a, series_b, corr_type)
+            lags = correlation_lags(len(series_a), len(series_b),
+                                    corr_type)
             ax[indy, indx].plot(lags, corr, '-k')
             ax[indy, indx].grid()
 
@@ -593,5 +597,10 @@ def correlation_matrix_plot(df, column_names, figsize=(10, 10),
 
             mlags[indy, indx] = lags[max_lag]
             mcorr[indy, indx] = corr[max_lag]
+
+    fig.suptitle(title)
+    fig.supxlabel(xlabel)
+    fig.supylabel('Correlation coefficient/[-]')
+    fig.tight_layout()
 
     return fig, ax, mlags, mcorr
