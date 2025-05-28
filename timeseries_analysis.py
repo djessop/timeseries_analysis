@@ -601,6 +601,43 @@ def correlation_matrix_plot(df, column_names, title, xlabel, figsize=(10, 10),
     fig.suptitle(title)
     fig.supxlabel(xlabel)
     fig.supylabel('Correlation coefficient/[-]')
-    fig.tight_layout()
 
+    return fig, ax, mlags, mcorr
+
+def xcorrelation_matrix_plot(df1, df2, datecol='Date', title='',
+                             figsize=(8, 6)):
+    '''Plot the cross-correlations for the datasets contained within two
+    dataframes, df1 and df2, in the form of a m-by-n matrix of plots where m
+    is the number of datasets in df1 and n the number in df2
+
+    See also: correlation_matrix_plot
+    '''
+
+    mdata = len(df1.columns[~df1.columns.str.contains(datecol)])
+    ndata = len(df2.columns[~df2.columns.str.contains(datecol)])
+    # print(mdata, ndata)
+    fig, ax = plt.subplots(nrows=mdata, ncols=ndata, sharex=True, sharey=True,
+                           figsize=figsize)
+
+    mlags = np.zeros((mdata, ndata), dtype=float)
+    mcorr = np.zeros((mdata, ndata), dtype=float)
+    for indy in range(mdata):
+        series_a = detrend_normalise_data(df1.iloc[:, indy])
+        for indx in range(ndata):
+            series_b = detrend_normalise_data(df2.iloc[:, indx])
+            corr = correlate(series_a, series_b, 'full')
+            lags = correlation_lags(len(series_a), len(series_b), 'full')
+            ax[indy, indx].plot(lags, corr, '-k')
+            ax[indy, indx].grid()
+
+            max_lag = np.argmax(abs(corr))
+
+            ax[indy, indx].plot(lags[max_lag], corr[max_lag], '.r')
+
+            mlags[indy, indx] = lags[max_lag]
+            mcorr[indy, indx] = corr[max_lag]
+
+    fig.suptitle(title, y=.95, fontsize='large')
+    fig.supylabel('Correlation function/[-]', x=.05, fontsize='large')
+    fig.supxlabel('Lag/[days]', y=.05, fontsize='large')
     return fig, ax, mlags, mcorr
