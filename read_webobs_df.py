@@ -1,8 +1,11 @@
+#!/usr/bin/env python3 
+# -*- coding: utf-8 -*-
+
 from timeseries_analysis.dateparser import dateparser, date_parser_sismo 
 
-import numpy as np
-import datetime
-import pandas
+# import numpy as np
+# import datetime
+import pandas as pd
 
 ##### NAME TUPLES #####
 # Hot springs data
@@ -45,7 +48,7 @@ def read_webform_data(fname, names, sep=';'):
 
     This routine deals with missing or erronous time entries.
     '''
-    df = pandas.read_csv(fname, sep=sep, names=names, skiprows=1)
+    df = pd.read_csv(fname, sep=sep, names=names, skiprows=1)
 
     # Fill in null values for the time to midnight local
     df['Time'] = df['Time'].fillna('04:00')
@@ -59,7 +62,7 @@ def read_webform_data(fname, names, sep=';'):
     # Create a new column that combines date and time
     df['datetime'] = df['Date'] + ' ' + df['Time']
     # ...and convert it to datetime format
-    df['datetime'] = pandas.to_datetime(df['datetime'], utc=True)
+    df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
 
     return df
 
@@ -83,10 +86,10 @@ def read_timeseries(fname, names, sep=' ', comment='#', **kwargs):
     pandas dataframe
     '''
 
-    return pandas.read_csv(fname, names=names, sep=sep, comment=comment,
-                           parse_dates={'datetime':
-                                        ['y','m','d','H','M','S']},
-                           date_parser=dateparser, **kwargs)
+    return pd.read_csv(fname, names=names, sep=sep, comment=comment,
+                       parse_dates={'datetime':
+                                    ['y','m','d','H','M','S']},
+                       date_parser=dateparser, **kwargs)
 
 
 def read_seismo_ts(fname, names, sep=';'):
@@ -95,8 +98,8 @@ def read_seismo_ts(fname, names, sep=';'):
     particular form of the date parsing routines to account for the fractional 
     seconds encountered therein.
     '''
-    return pandas.read_csv(fname, sep=sep, comment='#', names=names,
-                           parse_dates=[0], date_parser=date_parser_sismo) 
+    return pd.read_csv(fname, sep=sep, comment='#', names=names,
+                       parse_dates=[0], date_parser=date_parser_sismo) 
 
 
 def write_to_workbook(df, iterkey, iterable, wb_name='workbook.xlsx'):

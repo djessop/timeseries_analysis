@@ -1,5 +1,5 @@
-#!/usr/share/python3 
-# coding=utf-8
+#!/usr/bin/env python3 
+# -*- coding: utf-8 -*-
 
 """ 
 timeseries_analysis.py
@@ -7,43 +7,31 @@ timeseries_analysis.py
 Provides routines for the analysis of time series, including plotting and 
 filtering.
 
-Last update: 2023-05-09
+Last update: 2025-06-02
 
 Created by D. E. Jessop
 """
 
-# Plotting
-from matplotlib.dates import (DateFormatter, 
-                              MonthLocator, 
-                              DayLocator)
-from matplotlib.ticker import (LogLocator,
-                               NullFormatter, 
-                               AutoMinorLocator,
-                               MultipleLocator,
-                               ScalarFormatter)
 from matplotlib.transforms import blended_transform_factory
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+import plotly.express as px
 
-# Numerical/analysis
-from scipy import interpolate
 from scipy import ndimage
 from scipy.signal import (butter,
                           lfilter,
-                          freqz, 
+                          # freqz, 
                           firwin,
                           fftconvolve,
                           filtfilt,
                           welch,
+                          # periodogram,
+                          # medfilt,
                           periodogram,
-                          medfilt,
-                          periodogram,
-                          find_peaks,
+                          # find_peaks,
                           correlate,
                           correlation_lags,
                           detrend)
 from scipy.signal.windows import hann, tukey
-from scipy.optimize import curve_fit
 # from scipy.stats import ks_2sam
 
 from astropy.timeseries import LombScargle
@@ -51,15 +39,11 @@ from astropy.timeseries import LombScargle
 import pandas as pd
 import numpy as np
 
-# String manipulation
-from datetime import datetime as DT
-from string import ascii_lowercase as LC
-
 
 secs_in_day = 86400.0020
-secs_in_hr  =  3600.
+secs_in_hr  =  3600
 days_in_yr  =   365.2422
-days_in_mon =    28.
+days_in_mon =    28
 
 def hz_to_yr(f_hz):
     '''
@@ -93,7 +77,7 @@ def plot_peaks_periods(ax, peaks, power_spectrum, periods=None, unit='years',
     for peak in peaks:
         if peak is not None:
             T_years = hz_to_yr(f[peak])
-            p = ax.annotate('%.2f %s' % (T_years, 'yr'),
+            _ = ax.annotate('%.2f %s' % (T_years, 'yr'),
                             xy=(f[peak], Pxx[peak]),
                             # Place text slightly below data point
                             xytext=(f[peak], Pxx[peak]*peakoffset),
@@ -373,7 +357,6 @@ def ts2psd(data, t0=1, method='periodogram'):
     scipy.signal.welch
     '''
     fs  =  1./t0  # Sampling frequency
-    Nyq = .5 * fs  # Nyquist sampling rate.  Could be useful later
 
     # Estimate PSD
     if method == 'welch':
@@ -399,6 +382,20 @@ def moving_average(data, radius, pad_mode='mean'):
 
 
 def plot_data_plotly(df, **kwargs):
+    '''
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Dataframe containing information to be plotted.
+    **kwargs : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    fig : matplotlib.figure
+        DESCRIPTION.
+
+    '''
     fig = px.scatter(df, **kwargs)
     # Put y-axis values on logarithmic scale
     fig.update_layout(yaxis_type='linear')
